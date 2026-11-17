@@ -9,7 +9,7 @@ const app = express();
 require('dotenv').config();
 
 // Validate required environment variables
-const requiredEnvVars = ['PORT', 'MONGODB_URI', 'JWT_SECRET'];
+const requiredEnvVars = ['MONGODB_URI', 'JWT_SECRET'];
 for (const envVar of requiredEnvVars) {
   if (!process.env[envVar]) {
     console.error(`Error: ${envVar} is not defined in environment variables`);
@@ -38,6 +38,7 @@ app.use((req, res, next) => {
 
 // CORS configuration
 const allowedOrigins = [
+  'https://journeylog-gilt.vercel.app',
   'http://localhost:5173',
   'http://localhost:5174',
   'http://127.0.0.1:5173',
@@ -112,6 +113,22 @@ app.get('/api/v1/health', (req, res) => {
   res.json({ success: true, message: 'JourneyLog API is running' });
 });
 
+// Vercel imports the exported app without running the local startup block.
+// Connect before any route can query MongoDB in either runtime.
+const connectDB = require('./config/db');
+app.use('/api/v1', async (req, res, next) => {
+  try {
+    await connectDB();
+    next();
+  } catch (err) {
+    console.error('MongoDB connection failed:', err.name);
+    const error = new Error('Database temporarily unavailable. Please try again shortly.');
+    error.statusCode = 503;
+    error.code = 'DATABASE_UNAVAILABLE';
+    next(error);
+  }
+});
+
 // Routes
 const accountRoutes = require('./routes/account.routes');
 const authRoutes = require('./routes/auth.routes');
@@ -167,7 +184,6 @@ app.use((req, res) => {
 // Only start server if this file is run directly
 if (require.main === module) {
   const PORT = process.env.PORT || 3001;
-  const connectDB = require('./config/db');
 
   // Connect to MongoDB first, then start the server
   connectDB()

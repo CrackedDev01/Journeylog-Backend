@@ -1,16 +1,25 @@
 // MongoDB configuration using Mongoose
 const mongoose = require('mongoose');
 
-const connectDB = async (retries = 5) => {
-  // Fail fast on server selection so a DNS/Atlas blip surfaces as a
-  // 503 with a retryable message instead of hanging the request for 60s+
-  // and misleading the client with a 401 "token failed".
-  const conn = await mongoose.connect(process.env.MONGODB_URI, {
-    serverSelectionTimeoutMS: 10000,
-  });
+let connectionPromise;
 
-  console.log(`MongoDB Connected: ${conn.connection.host}`);
-  return conn;
+const connectDB = async () => {
+  if (mongoose.connection.readyState === 1) return mongoose;
+
+  // Concurrent requests on a cold start must await the same connection.
+  if (!connectionPromise) {
+    connectionPromise = mongoose.connect(process.env.MONGODB_URI, {
+      serverSelectionTimeoutMS: 10000,
+    }).then((conn) => {
+      console.log(`MongoDB Connected: ${conn.connection.host}`);
+      return conn;
+    }).finally(() => {
+      // Allow a later request to reconnect after a failure or disconnect.
+      connectionPromise = undefined;
+    });
+  }
+
+  return connectionPromise;
 };
 
 module.exports = connectDB;
